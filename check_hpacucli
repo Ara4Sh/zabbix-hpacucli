@@ -1,0 +1,102 @@
+#!/bin/bash
+# Copyright (C) 2016 Arash Shams <xsysxpert@gmail.com>.
+#
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+_check_ok() {
+	if [[ $result -eq 1 ]]; then 
+		echo 0
+	else
+		echo 1
+	fi
+}
+
+_create_logfile() {
+	hpaclog=$(mktemp /var/tmp/hpaclog.XXXXX)
+}
+
+_clean_logfile() {
+	rm $hpaclog
+}
+
+ctrlstat() {
+	sudo hpacucli ctrl all show status > $hpaclog
+	if [[ $(grep -c '^Another' $hpaclog) -eq 1 ]]; then
+		sleep 10
+		ctrlstat
+		_clean_logfile
+        fi
+	# Default Values
+	ctrl=1
+	cache=1
+	bat=1
+	# Controller
+	result=$(grep Controller $hpaclog |awk '{print $3}'|grep -c OK)
+	ctrl=$(_check_ok)
+	# Cache
+	result=$(grep Cache $hpaclog |awk '{print $3}'|grep -c OK)
+	cache=$(_check_ok)
+	# Battery
+	if [[ $(grep Battery $hpaclog |awk '{print $3}'|grep -c OK) -eq 0 ]];then
+		bat=0
+	else
+		result=$(grep Battery $hpaclog |awk '{print $3}'|grep -c OK)
+		bat=$(_check_ok)
+	fi
+	# Final Check
+	if [[ $(( $ctrl + $cache + $bat )) -eq 0 ]]; then
+		echo 0
+	else 
+		echo 1
+	fi
+}
+
+diskstat() {
+	sudo hpacucli ctrl slot=0 pd all show > $hpaclog
+	if [[ $(grep -c '^Another' $hpaclog) -eq 1 ]]; then
+	        sleep 10
+	        diskstat
+	        _clean_logfile
+        fi
+	drive_count=$(grep -c physicaldrive $hpaclog)
+    	drive_ok=$(grep -c OK $hpaclog)
+
+    	if [ $drive_ok -eq $drive_count ]; then
+        	echo 0
+    	else
+        	echo 1
+	fi
+}
+
+help() {
+		echo "Valid options : ctrlstats , diskstat , version"
+		echo "Fork me : https://github.com/Ara4Sh/zabbix-hpacucli"
+}
+
+case $1 in 
+	ctrlstat)
+		_create_logfile
+		ctrlstat
+	;;
+	diskstat)
+		_create_logfile
+		diskstat
+	;;
+	help)
+		help
+	;;
+	*)
+		help
+		exit 2
+esac
